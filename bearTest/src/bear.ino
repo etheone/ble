@@ -175,11 +175,12 @@ void reportCallback(advertisementReport_t *report) {
 				uint8_t adv_name[31];
 				// Find short local name.
 				if (0x00 == ble_advdata_decode(0x08, report->advDataLen, report->advData, &len, adv_name)) {
+
 								Serial.print("  The length of Short Local Name : ");
 								Serial.println(len, HEX);
 								Serial.print("  The Short Local Name is        : ");
 								Serial.println((const char *)adv_name);
-								if (0x00 == memcmp(adv_name, "Biscuit", min(7, len))) {
+								if (0x00 == memcmp(adv_name, "RBL-DUO", min(7, len))) {
 												ble.stopScanning();
 												device.addr_type = report->peerAddrType;
 												memcpy(device.addr, report->peerAddr, 6);
@@ -188,12 +189,20 @@ void reportCallback(advertisementReport_t *report) {
 								}
 				}
 				else if (0x00 == ble_advdata_decode(0x09, report->advDataLen, report->advData, &len, adv_name)) {
+
+								Serial.println("RBL-DUO??????????");
+								Serial.println("RBL-DUO??????????");
+								Serial.println("RBL-DUO??????????");
 								Serial.print("  The length of Complete Local Name : ");
 								Serial.println(len, HEX);
 								Serial.print("  The Complete Local Name is        : ");
 								Serial.println((const char *)adv_name);
-								if (0x00 == memcmp(adv_name, "Heart Rate", min(7, len))) {
+								if (0x00 == memcmp(adv_name, "RBL-DUO", min(7, len))) {
+												ble.stopScanning();
+												device.addr_type = report->peerAddrType;
+												memcpy(device.addr, report->peerAddr, 6);
 
+												ble.connect(report->peerAddr, report->peerAddrType);
 								}
 				}
 }
@@ -231,7 +240,7 @@ void deviceDisconnectedCallback(uint16_t handle){
 				Serial.print("Disconnected handle:");
 				Serial.println(handle,HEX);
 				if (connected_id == handle) {
-								Serial.println("Restart scanning.");
+								Serial.println("Restart scanning.\n\n\n\n\n\n\n");
 								// Disconnect from remote device, restart to scanning.
 								connected_id = 0xFFFF;
 								ble.startScanning();
@@ -356,7 +365,7 @@ static void discoveredCharsDescriptorsCallback(BLEStatus_t status, uint16_t con_
 								}
 								else { // Read value of characteristic,
 												   // Result will be reported on gattReadCallback.
-												ble.readValue(device.connected_handle,&device.service.chars[1].chars);
+												ble.readValue(device.connected_handle,&device.service.chars[chars_index - 1].chars);
 								}
 				}
 }
@@ -537,5 +546,6 @@ void setup() {
  * @brief Loop.
  */
 void loop() {
+
 
 }

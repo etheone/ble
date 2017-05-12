@@ -40,9 +40,18 @@
  * However the user can invoke this method to make the mode explicit.
  * Learn more about system modes: https://docs.particle.io/reference/firmware/photon/#system-modes .
  */
+
+#include "photon-thermistor.h"
+//#include <Adafruit_DHT.h>
+#include <SparkJson.h>
+
+
 #if defined(ARDUINO)
 SYSTEM_MODE(SEMI_AUTOMATIC);
 #endif
+
+#define DHTPIN 0
+#define DHTTYPE DHT11
 
 /*
  * BLE peripheral preferred connection parameters:
@@ -67,10 +76,15 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 #define CHARACTERISTIC3_MAX_LEN    8
 
 //Try to send tempen
-#define CHARACTERISTIC_TEMP_MAX_LEN 8
+#define CHARACTERISTIC_TEMP_MAX_LEN 16
 
 //tempen characteristics uuid??
 int x = 0;
+float temp;
+float hum;
+//DHT dht(DHTPIN, DHTTYPE);
+
+Thermistor *t;
 
 static uint8_t tempen_uuid[16] = { 0x71,0x3d,0x00,0x03,0x50,0x3e,0x4c,0x75,0xba,0x94,0x31,0x48,0xf1,0x8d,0x94,0x1e };
 
@@ -80,13 +94,12 @@ static uint8_t tempen_uuid[16] = { 0x71,0x3d,0x00,0x03,0x50,0x3e,0x4c,0x75,0xba,
 // Primary service 128-bits UUID
 static uint8_t service1_uuid[16] = { 0x71,0x3d,0x00,0x00,0x50,0x3e,0x4c,0x75,0xba,0x94,0x31,0x48,0xf1,0x8d,0x94,0x1e };
 // Characteristics 128-bits UUID
-static uint8_t char1_uuid[16]    = { 0x71,0x3d,0x00,0x02,0x50,0x3e,0x4c,0x75,0xba,0x94,0x31,0x48,0xf1,0x8d,0x94,0x1e };
-static uint8_t char2_uuid[16]    = { 0x71,0x3d,0x00,0x03,0x50,0x3e,0x4c,0x75,0xba,0x94,0x31,0x48,0xf1,0x8d,0x94,0x1e };
+
 
 // Primary service 128-bits UUID
 static uint8_t service2_uuid[16] = { 0x71,0x3d,0x00,0x00,0x51,0x3e,0x4c,0x75,0xba,0x94,0x31,0x48,0xf1,0x8d,0x94,0x1e };
 // Characteristics 128-bits UUID
-static uint8_t char3_uuid[16]    = { 0x71,0x3d,0x00,0x02,0x51,0x3e,0x4c,0x75,0xba,0x94,0x31,0x48,0xf1,0x8d,0x94,0x1e };
+
 
 // GAP and GATT characteristics value
 static uint8_t appearance[2] = {
@@ -160,22 +173,18 @@ static uint8_t scan_response[] = {
 };
 
 // Characteristic value handle
-static uint16_t character1_handle = 0x0000;
-static uint16_t character2_handle = 0x0000;
-static uint16_t character3_handle = 0x0000;
+
 
 //tempen handle (type)
 static uint16_t tempen_handle = 0x0300;
 // Buffer of characterisitc value.
-static uint8_t characteristic1_data[CHARACTERISTIC1_MAX_LEN] = { 0x01 };
-static uint8_t characteristic2_data[CHARACTERISTIC2_MAX_LEN] = { 0x00 };
-static uint8_t characteristic3_data[CHARACTERISTIC2_MAX_LEN] = { 0x03 };
+
 
 //tempen start??
-static uint8_t tempen_data[CHARACTERISTIC_TEMP_MAX_LEN] = { 0x00 };
-
+//static uint8_t tempen_data[CHARACTERISTIC_TEMP_MAX_LEN] = { 0x00 };
+String tempen_data;
 // Timer task.
-static btstack_timer_source_t characteristic2;
+//static btstack_timer_source_t characteristic2;
 
 //Tempen Timer task
 static btstack_timer_source_t tempen_timer;
@@ -229,24 +238,11 @@ uint16_t gattReadCallback(uint16_t value_handle, uint8_t * buffer, uint16_t buff
 				Serial.print("Read value handler: ");
 				Serial.println(value_handle, HEX);
 
-				if (character1_handle == value_handle) { // Characteristic value handle.
-								Serial.println("Character1 read:");
-								memcpy(buffer, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
-								characteristic_len = CHARACTERISTIC1_MAX_LEN;
-				}
-				else if (character1_handle+1 == value_handle) { // Client Characteristic Configuration Descriptor Handle.
-								Serial.println("Character1 cccd read:");
-								uint8_t buf[2] = { 0x01,0x00 };
-								memcpy(buffer, buf, 2);
-								characteristic_len = 2;
-				}
-				else if (character2_handle == value_handle) {
-								Serial.println("Character2 read:");
-								memcpy(buffer, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
-								characteristic_len = CHARACTERISTIC2_MAX_LEN;
-				} else if (tempen_handle == value_handle) {
+				if (tempen_handle == value_handle) {
+								uint8_t dataToSend[CHARACTERISTIC_TEMP_MAX_LEN];
+								tempen_data.getBytes(dataToSend, sizeof(tempen_data));
 								Serial.println("tempen read:");
-								memcpy(buffer, tempen_data, CHARACTERISTIC_TEMP_MAX_LEN);
+								//memcpy(dataToSend, tempen_data, CHARACTERISTIC_TEMP_MAX_LEN);
 								characteristic_len = CHARACTERISTIC_TEMP_MAX_LEN;
 				}
 				return characteristic_len;
@@ -265,36 +261,13 @@ int gattWriteCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size) {
 				Serial.print("Write value handler: ");
 				Serial.println(value_handle, HEX);
 
-				if (character1_handle == value_handle) {
-								memcpy(characteristic1_data, buffer, size);
-								Serial.print("Characteristic1 write value: ");
-								for (uint8_t index = 0; index < size; index++) {
-												Serial.print(characteristic1_data[index], HEX);
-												Serial.print(" ");
-								}
-								Serial.println(" ");
-				}
-				else if (character1_handle+1 == value_handle) {
-								Serial.print("Characteristic1 cccd write value: ");
-								for (uint8_t index = 0; index < size; index++) {
-												Serial.print(buffer[index], HEX);
-												Serial.print(" ");
-								}
-								Serial.println(" ");
-				}
-				else if (character2_handle == value_handle) {
-								memcpy(characteristic2_data, buffer, size);
-								Serial.print("Characteristic2 write value: ");
-								for (uint8_t index = 0; index < size; index++) {
-												Serial.print(characteristic2_data[index], HEX);
-												Serial.print(" ");
-								}
-								Serial.println(" ");
-				} else if (tempen_handle == value_handle) {
-								memcpy(tempen_data, buffer, size);
+				if (tempen_handle == value_handle) {
+								uint8_t dataToSend[CHARACTERISTIC_TEMP_MAX_LEN];
+								tempen_data.getBytes(dataToSend, sizeof(tempen_data));
+								//memcpy(tempen_data, buffer, size);
 								Serial.print("tempen write value: ");
-								for (uint8_t index = 0; index < size; index++) {
-												Serial.print(tempen_data[index], HEX);
+								for (uint8_t index = 0; index < CHARACTERISTIC_TEMP_MAX_LEN; index++) {
+												Serial.print(dataToSend[index], HEX);
 												Serial.print(" ");
 								}
 				}
@@ -307,101 +280,70 @@ int gattWriteCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size) {
  * @param[in]  *ts
  *
  * @retval None
+
  */
-static void characteristic2_notify(btstack_timer_source_t *ts) {
-				Serial.println("characteristic2_notify");
-
-				characteristic2_data[CHARACTERISTIC2_MAX_LEN-1]++;
-				ble.sendNotify(character2_handle, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
-				// Restart timer.
-				ble.setTimer(ts, 10000);
-				ble.addTimer(ts);
-}
-
 //tempen notify
 static void tempen_notify(btstack_timer_source_t *ts) {
-				Serial.println("Tempen notify:");
-				Serial.println(tempen_data[CHARACTERISTIC_TEMP_MAX_LEN]);
 
-				if(x == 0) {
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 8] = { 0x74};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 7] = { 0x65 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 6] = { 0x6d };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 5] = { 0x70 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 4] = { 0x3a};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 3] = { 0x32};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 2] = { 0x35 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 1] = { 0x31 };
-				} else if(x == 1) {
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 8] = { 0x74};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 7] = { 0x65 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 6] = { 0x6d };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 5] = { 0x70 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 4] = { 0x3a};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 3] = { 0x32};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 2] = { 0x35 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 1] = { 0x35 };
-				} else if(x == 2) {
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 8] = { 0x74};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 7] = { 0x65 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 6] = { 0x6d };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 5] = { 0x70 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 4] = { 0x3a};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 3] = { 0x32};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 2] = { 0x35 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 1] = { 0x31 };
-				} else if(x == 3) {
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 8] = { 0x74};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 7] = { 0x65 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 6] = { 0x6d };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 5] = { 0x70 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 4] = { 0x3a};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 3] = { 0x32};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 2] = { 0x35 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 1] = { 0x35 };
-				} else if(x == 4) {
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 8] = { 0x74};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 7] = { 0x65 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 6] = { 0x6d };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 5] = { 0x70 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 4] = { 0x3a};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 3] = { 0x32};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 2] = { 0x35 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 1] = { 0x31 };
-				} else if(x == 5) {
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 8] = { 0x74};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 7] = { 0x65 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 6] = { 0x6d };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 5] = { 0x70 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 4] = { 0x3a};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 3] = { 0x32};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 2] = { 0x35 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 1] = { 0x35 };
-				} else if(x == 6) {
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 8] = { 0x74};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 7] = { 0x65 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 6] = { 0x6d };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 5] = { 0x70 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 4] = { 0x3a};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 3] = { 0x32};
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 2] = { 0x35 };
-								tempen_data[CHARACTERISTIC_TEMP_MAX_LEN - 1] = { 0x3A };
+				ATOMIC_BLOCK() {
+								Serial.println("Tempen notify:");
+								//Serial.println(tempen_data[CHARACTERISTIC_TEMP_MAX_LEN]);
+								readData();
+								dataToJSON();
+								//tempen_data = dataToJSON(temp);
+								Serial.println("Hey");
+								uint8_t dataToSend[CHARACTERISTIC_TEMP_MAX_LEN];
+								Serial.println("Heyo");
+								tempen_data.getBytes(dataToSend, sizeof(tempen_data));
+								Serial.println("Heyoooo");
+								//Serial.println("SIZEOF DATATOSEND:");
+								//Serial.println(sizeof(dataToSend));
+								//Serial.println("TEMPEN MAX LENGTH:");
+								//Serial.println(CHARACTERISTIC_TEMP_MAX_LEN);
+								ble.sendNotify(tempen_handle, dataToSend, CHARACTERISTIC_TEMP_MAX_LEN);
+								Serial.println("Heyuuuu");
+
+								//Restart timer
+								ble.setTimer(ts, 6000);
+								ble.addTimer(ts);
 				}
-				/*if(tempen_data[CHARACTERISTIC_TEMP_MAX_LEN] == 0x0A) {
-				    tempen_data[CHARACTERISTIC_TEMP_MAX_LEN] = 0x05;
+}
 
-				   } else {
-				    tempen_data[CHARACTERISTIC_TEMP_MAX_LEN] = 0x0A;
-				   }*/
-				x++;
-				if(x > 6) {
-								x = 0;
-				}
-				ble.sendNotify(tempen_handle, tempen_data, CHARACTERISTIC_TEMP_MAX_LEN);
+void readData() {
+				Serial.println("Helo");
+				//temp = dht.getTempCelcius();
+				temp = t->readTempC();
+				//tempen_data = "Temp: " + String(temp, 1);
+				Serial.println("temp: " + String(temp, 1));
+				Serial.println(temp, 1);
+				delayMicroseconds(1500);
+				//hum = dht.getHumidity();
+				//Serial.println("hum: " + String(hum));
+}
 
-				//Restart timer
-				ble.setTimer(ts, 6000);
-				ble.addTimer(ts);
+
+void dataToJSON() {
+				Serial.println("Hello");
+				StaticJsonBuffer<200> jsonBuffer;
+
+				JsonObject& root = jsonBuffer.createObject();
+				root["temp"] = String(temp, 1);
+				//root["humid"] = hum;
+
+
+				//root["motion"] = motion;
+
+				char buffer[200];
+				Serial.println("buffer:");
+				root.printTo(buffer, sizeof(buffer));
+
+				String tmp;
+				Serial.println(sizeof(buffer));
+				Serial.println(buffer);
+				tmp = String(buffer);
+				Serial.println("tempen data is now:");
+				Serial.println(tmp);
+				tempen_data = String(buffer);
 }
 
 /**
@@ -411,7 +353,8 @@ void setup() {
 				Serial.begin(115200);
 				delay(5000);
 				Serial.println("BLE peripheral demo.");
-
+				//dht.begin();
+				t = new Thermistor(A0, 10000, 4095, 10000, 25, 3950, 5, 20);
 				// Open debugger, must befor init().
 				//ble.debugLogger(true);
 				//ble.debugError(true);
@@ -443,7 +386,9 @@ void setup() {
 				character2_handle = ble.addCharacteristicDynamic(char2_uuid, ATT_PROPERTY_READ|ATT_PROPERTY_NOTIFY, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
 
 				//Add tempen to service 1, return value of handle characteristic???
-				tempen_handle = ble.addCharacteristicDynamic(tempen_uuid, ATT_PROPERTY_READ|ATT_PROPERTY_NOTIFY, tempen_data, CHARACTERISTIC_TEMP_MAX_LEN);
+				uint8_t dataToSend[sizeof(tempen_data)];
+				tempen_data.getBytes(dataToSend, sizeof(tempen_data));
+				tempen_handle = ble.addCharacteristicDynamic(tempen_uuid, ATT_PROPERTY_READ|ATT_PROPERTY_NOTIFY, dataToSend, CHARACTERISTIC_TEMP_MAX_LEN);
 
 				// Add primary sevice2.
 				ble.addService(service2_uuid);
@@ -467,6 +412,8 @@ void setup() {
 				ble.addTimer(&characteristic2);
 				ble.setTimer(&tempen_timer, 6000);
 				ble.addTimer(&tempen_timer);
+
+
 }
 
 /**
