@@ -365,7 +365,7 @@ static void discoveredCharsDescriptorsCallback(BLEStatus_t status, uint16_t con_
 								}
 								else { // Read value of characteristic,
 												   // Result will be reported on gattReadCallback.
-												ble.readValue(device.connected_handle,&device.service.chars[chars_index - 1].chars);
+												ble.readValue(device.connected_handle,&device.service.chars[0].chars);
 								}
 				}
 }
@@ -391,12 +391,29 @@ void gattReadCallback(BLEStatus_t status, uint16_t con_handle, uint16_t value_ha
 								Serial.print("value handle: ");
 								Serial.println(value_handle, HEX);
 
-								Serial.print("The value : ");
+								Serial.print("The value :");
+								String hexen = "";
+								char valueText[length + 1];
 								for (index = 0; index < length; index++) {
 												Serial.print(value[index], HEX);
+												hexen += String(value[index], HEX);
+												valueText[index] = value[index];
+												//normal += String(value[index]);
 												Serial.print(" ");
 								}
+								valueText[length] = '\0';
 								Serial.println(" ");
+								Serial.println("Collected value: ");
+								Serial.println(hexen);
+								Serial.println("here it might be");
+								Serial.print(valueText);
+								Serial.println(String(valueText));
+								//Serial.println(hexen.toCharArray());
+								//Serial.println(hexen.c_str());
+
+								ble.disconnect(con_handle);
+
+
 				}
 				else if (status == BLE_STATUS_DONE) {
 								uint8_t data[]= {0x01,0x02,0x03,0x04,0x05,1,2,3,4,5};

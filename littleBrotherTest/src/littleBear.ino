@@ -40,7 +40,7 @@
  * However the user can invoke this method to make the mode explicit.
  * Learn more about system modes: https://docs.particle.io/reference/firmware/photon/#system-modes .
  */
-
+SYSTEM_THREAD(ENABLED);
 #include "photon-thermistor.h"
 //#include <Adafruit_DHT.h>
 #include <SparkJson.h>
@@ -78,10 +78,14 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 //Try to send tempen
 #define CHARACTERISTIC_TEMP_MAX_LEN 16
 
+//SYSTEM_THREAD(ENABLED);
+
 //tempen characteristics uuid??
 int x = 0;
 float temp;
 float hum;
+
+bool dataRead = false;
 //DHT dht(DHTPIN, DHTTYPE);
 
 Thermistor *t;
@@ -218,6 +222,21 @@ void deviceConnectedCallback(BLEStatus_t status, uint16_t handle) {
  */
 void deviceDisconnectedCallback(uint16_t handle) {
 				Serial.println("Disconnected.");
+				Serial.println(handle);
+				Serial.println(dataRead);
+				if(dataRead) {
+								System.sleep(SLEEP_MODE_DEEP, 10);
+				}
+
+
+				//System.sleep(SLEEP_MODE_DEEP, 10);
+
+				/*if(tempen_handle == handle) {
+				    Serial.println("Its tempen_handle!!");
+				    System.sleep(SLEEP_MODE_DEEP, 10);
+				   }*/
+				//delayMicroseconds(500);
+				//System.sleep(SLEEP_MODE_DEEP, 10);
 }
 
 /**
@@ -234,17 +253,38 @@ void deviceDisconnectedCallback(uint16_t handle) {
  */
 uint16_t gattReadCallback(uint16_t value_handle, uint8_t * buffer, uint16_t buffer_size) {
 				uint8_t characteristic_len = 0;
-
-				Serial.print("Read value handler: ");
-				Serial.println(value_handle, HEX);
+				Serial.println("Data is being read!");
+				//Serial.print("Read value handler: ");
+				//Serial.println(value_handle, HEX);
 
 				if (tempen_handle == value_handle) {
-								uint8_t dataToSend[CHARACTERISTIC_TEMP_MAX_LEN];
-								tempen_data.getBytes(dataToSend, sizeof(tempen_data));
-								Serial.println("tempen read:");
-								//memcpy(dataToSend, tempen_data, CHARACTERISTIC_TEMP_MAX_LEN);
-								characteristic_len = CHARACTERISTIC_TEMP_MAX_LEN;
+								ATOMIC_BLOCK() {
+												Serial.println("Reading sensors");
+												//Serial.println(tempen_data[CHARACTERISTIC_TEMP_MAX_LEN]);
+												readData();
+												dataToJSON();
+												//tempen_data = dataToJSON(temp);
+												//Serial.println("Hey");
+												/*uint8_t dataToSend[CHARACTERISTIC_TEMP_MAX_LEN];
+												   Serial.println("Heyo");
+												   tempen_data.getBytes(dataToSend, sizeof(tempen_data));
+												   Serial.println("Heyoooo");*/
+
+												uint8_t dataToSend[CHARACTERISTIC_TEMP_MAX_LEN];
+												tempen_data.getBytes(dataToSend, sizeof(tempen_data));
+												//Serial.println("tempen read:");
+												memcpy(buffer, tempen_data, CHARACTERISTIC_TEMP_MAX_LEN);
+												characteristic_len = CHARACTERISTIC_TEMP_MAX_LEN;
+								}
+
+
 				}
+
+				dataRead = true;
+
+				//Serial.println("Data read done");
+				//dataRead = true;
+
 				return characteristic_len;
 }
 
@@ -258,17 +298,17 @@ uint16_t gattReadCallback(uint16_t value_handle, uint8_t * buffer, uint16_t buff
  * @retval
  */
 int gattWriteCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size) {
-				Serial.print("Write value handler: ");
-				Serial.println(value_handle, HEX);
+				//Serial.print("Write value handler: ");
+				//Serial.println(value_handle, HEX);
 
 				if (tempen_handle == value_handle) {
 								uint8_t dataToSend[CHARACTERISTIC_TEMP_MAX_LEN];
 								tempen_data.getBytes(dataToSend, sizeof(tempen_data));
 								//memcpy(tempen_data, buffer, size);
-								Serial.print("tempen write value: ");
+								//Serial.print("tempen write value: ");
 								for (uint8_t index = 0; index < CHARACTERISTIC_TEMP_MAX_LEN; index++) {
-												Serial.print(dataToSend[index], HEX);
-												Serial.print(" ");
+												//Serial.print(dataToSend[index], HEX);
+												//Serial.print(" ");
 								}
 				}
 				return 0;
@@ -283,40 +323,42 @@ int gattWriteCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size) {
 
  */
 //tempen notify
-static void tempen_notify(btstack_timer_source_t *ts) {
+/*
+   static void tempen_notify(btstack_timer_source_t *ts) {
 
-				ATOMIC_BLOCK() {
-								Serial.println("Tempen notify:");
-								//Serial.println(tempen_data[CHARACTERISTIC_TEMP_MAX_LEN]);
-								readData();
-								dataToJSON();
-								//tempen_data = dataToJSON(temp);
-								Serial.println("Hey");
-								uint8_t dataToSend[CHARACTERISTIC_TEMP_MAX_LEN];
-								Serial.println("Heyo");
-								tempen_data.getBytes(dataToSend, sizeof(tempen_data));
-								Serial.println("Heyoooo");
-								//Serial.println("SIZEOF DATATOSEND:");
-								//Serial.println(sizeof(dataToSend));
-								//Serial.println("TEMPEN MAX LENGTH:");
-								//Serial.println(CHARACTERISTIC_TEMP_MAX_LEN);
-								ble.sendNotify(tempen_handle, dataToSend, CHARACTERISTIC_TEMP_MAX_LEN);
-								Serial.println("Heyuuuu");
+    ATOMIC_BLOCK() {
+        Serial.println("Tempen notify:");
+        //Serial.println(tempen_data[CHARACTERISTIC_TEMP_MAX_LEN]);
+        readData();
+        dataToJSON();
+        //tempen_data = dataToJSON(temp);
+        Serial.println("Hey");
+        uint8_t dataToSend[CHARACTERISTIC_TEMP_MAX_LEN];
+        Serial.println("Heyo");
+        tempen_data.getBytes(dataToSend, sizeof(tempen_data));
+        Serial.println("Heyoooo");
+        //Serial.println("SIZEOF DATATOSEND:");
+        //Serial.println(sizeof(dataToSend));
+        //Serial.println("TEMPEN MAX LENGTH:");
+        //Serial.println(CHARACTERISTIC_TEMP_MAX_LEN);
+        ble.sendNotify(tempen_handle, dataToSend, CHARACTERISTIC_TEMP_MAX_LEN);
+        Serial.println("Heyuuuu");
 
-								//Restart timer
-								ble.setTimer(ts, 6000);
-								ble.addTimer(ts);
-				}
-}
+        //Restart timer
+        ble.setTimer(ts, 6000);
+        ble.addTimer(ts);
+    }
+   }
+ */
 
 void readData() {
-				Serial.println("Helo");
+				//Serial.println("Helo");
 				//temp = dht.getTempCelcius();
 				temp = t->readTempC();
 				//tempen_data = "Temp: " + String(temp, 1);
-				Serial.println("temp: " + String(temp, 1));
-				Serial.println(temp, 1);
-				delayMicroseconds(1500);
+				//Serial.println("temp: " + String(temp, 1));
+				//Serial.println(temp, 1);
+				//delayMicroseconds(1500);
 				//hum = dht.getHumidity();
 				//Serial.println("hum: " + String(hum));
 }
@@ -327,22 +369,22 @@ void dataToJSON() {
 				StaticJsonBuffer<200> jsonBuffer;
 
 				JsonObject& root = jsonBuffer.createObject();
-				root["temp"] = String(temp, 1);
+				root["temp"] = String(temp, 1).toFloat();
 				//root["humid"] = hum;
 
 
 				//root["motion"] = motion;
 
 				char buffer[200];
-				Serial.println("buffer:");
+				//Serial.println("buffer:");
 				root.printTo(buffer, sizeof(buffer));
 
 				String tmp;
-				Serial.println(sizeof(buffer));
-				Serial.println(buffer);
+				//Serial.println(sizeof(buffer));
+				//Serial.println(buffer);
 				tmp = String(buffer);
-				Serial.println("tempen data is now:");
-				Serial.println(tmp);
+				//Serial.println("tempen data is now:");
+				//Serial.println(tmp);
 				tempen_data = String(buffer);
 }
 
@@ -382,8 +424,8 @@ void setup() {
 				// Add primary service1.
 				ble.addService(service1_uuid);
 				// Add characteristic to service1, return value handle of characteristic.
-				character1_handle = ble.addCharacteristicDynamic(char1_uuid, ATT_PROPERTY_NOTIFY|ATT_PROPERTY_WRITE_WITHOUT_RESPONSE, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
-				character2_handle = ble.addCharacteristicDynamic(char2_uuid, ATT_PROPERTY_READ|ATT_PROPERTY_NOTIFY, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
+				//character1_handle = ble.addCharacteristicDynamic(char1_uuid, ATT_PROPERTY_NOTIFY|ATT_PROPERTY_WRITE_WITHOUT_RESPONSE, characteristic1_data, CHARACTERISTIC1_MAX_LEN);
+				//character2_handle = ble.addCharacteristicDynamic(char2_uuid, ATT_PROPERTY_READ|ATT_PROPERTY_NOTIFY, characteristic2_data, CHARACTERISTIC2_MAX_LEN);
 
 				//Add tempen to service 1, return value of handle characteristic???
 				uint8_t dataToSend[sizeof(tempen_data)];
@@ -392,7 +434,7 @@ void setup() {
 
 				// Add primary sevice2.
 				ble.addService(service2_uuid);
-				character3_handle = ble.addCharacteristic(char3_uuid, ATT_PROPERTY_READ, characteristic3_data, CHARACTERISTIC3_MAX_LEN);
+				//character3_handle = ble.addCharacteristic(char3_uuid, ATT_PROPERTY_READ, characteristic3_data, CHARACTERISTIC3_MAX_LEN);
 
 				// Set BLE advertising parameters
 				ble.setAdvertisementParams(&adv_params);
@@ -406,19 +448,48 @@ void setup() {
 				Serial.println("BLE start advertising.");
 
 				// set one-shot timer
-				characteristic2.process = &characteristic2_notify;
-				tempen_timer.process = &tempen_notify;
-				ble.setTimer(&characteristic2, 10000);
-				ble.addTimer(&characteristic2);
-				ble.setTimer(&tempen_timer, 6000);
-				ble.addTimer(&tempen_timer);
+				//characteristic2.process = &characteristic2_notify;
+				//tempen_timer.process = &tempen_notify;
+				//ble.setTimer(&characteristic2, 10000);
+				//ble.addTimer(&characteristic2);
+				//ble.setTimer(&tempen_timer, 6000);
+				//ble.addTimer(&tempen_timer);
 
 
 }
+
+
 
 /**
  * @brief Loop.
  */
 void loop() {
+
+				dataRead = false;
+				while(!dataRead) {
+
+				}
+
+				/*		dataRead = false;
+
+				   while(!dataRead) {
+
+				   }
+				   //delay(1000);
+
+				   System.sleep(SLEEP_MODE_DEEP, 10);*/
+				//Serial.println("Loop begins");
+				/*	dataRead = false;
+
+
+				   Serial.println("Waiting for data to be read");
+
+				   while(!dataRead) {
+				     //Serial.println("Waiting for data to be read");
+				   }*/
+
+
+
+
 
 }
